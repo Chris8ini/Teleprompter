@@ -108,13 +108,10 @@
     </div>
     <div class="controls">
       <section class="panel" aria-label="Scrolling speed">
-        <div class="speed-top"><div><h2>Scrolling speed</h2><div class="speed-number" id="speedNumber">1×</div></div><span class="minor">1× = original pace<br>Fine steps between 1×–2×</span></div>
+        <div class="speed-top"><div><h2>Scrolling speed</h2><div class="speed-number" id="speedNumber">1×</div></div><span class="minor">1× = relaxed<br>4× = super fast</span></div>
         <div class="speed-presets" id="presets" role="group" aria-label="Speed presets">
           <button class="preset active" data-speed="1" type="button">1×</button>
-          <button class="preset" data-speed="1.25" type="button">1.25×</button>
-          <button class="preset" data-speed="1.5" type="button">1.5×</button>
-          <button class="preset" data-speed="1.75" type="button">1.75×</button>
-          <button class="preset" data-speed="2" type="button">2×</button>
+          <button class="preset" data-speed="1.25" type="button">1.25×</button><button class="preset" data-speed="1.5" type="button">1.5×</button><button class="preset" data-speed="1.75" type="button">1.75×</button><button class="preset" data-speed="2" type="button">2×</button>
           <button class="preset" data-speed="3" type="button">3×</button>
           <button class="preset" data-speed="4" type="button">4×</button>
           <button class="preset" data-speed="5" type="button">5×</button>
@@ -123,7 +120,7 @@
           <button class="preset" data-speed="10" type="button">10×</button>
         </div>
         <div class="range-line"><span class="minor">0.5×</span><input type="range" id="speedRange" min="0.5" max="10" value="1" step="0.05" aria-label="Scrolling speed"><span class="minor">10×</span></div>
-        <p class="tip">Original scrolling pace restored. Use 1.25×, 1.5×, 1.75× or the slider for precise speeds. Start/Pause scrolling and Stop/Record again remain separate.</p>
+        <p class="tip">Original 30 pixels/second at 1×. Fine-tune in 0.05× increments; fractional scrolling works on iPhone.</p>
       </section>
       <section class="panel" aria-label="Playback controls">
         <h2>Read your script</h2>
@@ -134,7 +131,7 @@
       <section class="panel" aria-label="Camera and recording controls">
         <h2>Camera & video</h2>
         <div class="inline-grid"><button class="btn" type="button" id="cameraBtn">◎ Turn camera on</button><button class="btn" type="button" id="flipBtn" disabled>⇄ Flip camera</button></div>
-        <div class="inline-grid" style="margin-top:10px"><button class="btn warn" type="button" id="recordBtn" disabled>● Record video</button><button class="btn" type="button" id="restartBtn">↺ Restart take</button></div><div class="inline-grid" style="margin-top:10px"><button class="btn" type="button" id="mirrorBtn">⇆ Mirror preview: on</button></div>
+        <div class="inline-grid" style="margin-top:10px"><button class="btn warn" type="button" id="recordBtn" disabled>● Record video</button><button class="btn" type="button" id="mirrorBtn">⇆ Mirror preview: on</button></div>
         <div class="inline-grid" style="margin-top:10px"><button class="btn" type="button" id="fitBtn">▣ Full view: on</button><button class="btn" type="button" id="rotateBtn">⟳ Rotate: 0°</button></div>
         <p class="tip"><strong>Vertical 9:16 recording:</strong> Full view shows the entire camera picture without zooming in; empty space may appear around it. Rotate only if the preview appears sideways. The preview is mirrored for reading, but your saved recording is not.</p>
         <p class="tip">Recordings are fixed to 9:16 portrait and contain camera + microphone only, never the scrolling words. Camera and recording require a secure HTTPS page.</p>
@@ -156,7 +153,7 @@
     fontValue:$('fontValue'), playBtn:$('playBtn'), resetBtn:$('resetBtn'), progress:$('progress'),
     camera:$('camera'), source:$('cameraSource'), placeholder:$('placeholder'), cameraBtn:$('cameraBtn'),
     flipBtn:$('flipBtn'), mirrorBtn:$('mirrorBtn'), fitBtn:$('fitBtn'), rotateBtn:$('rotateBtn'), recordBtn:$('recordBtn'),
-    recordMessage:$('recordMessage'), downloadLink:$('downloadLink'), restartBtn:$('restartBtn'),
+    recordMessage:$('recordMessage'), downloadLink:$('downloadLink'),
     statusDot:$('statusDot'), statusLabel:$('statusLabel'), focusBtn:$('focusBtn'), focusExit:$('focusExit')
   };
   const sample = `Hello! Here's my little update for today.\n\nThis is a teleprompter that can scroll THREE times, FOUR times, or even TEN times faster.\n\nPaste your own script below, choose your speed, and tap Start scrolling.\n\nThen turn on your camera and hit Record. Only your face and voice are saved—never the script.\n\nAnd that's it. Let's go!`;
@@ -164,11 +161,12 @@
   const save = (key, val) => { try { localStorage.setItem(key, String(val)); } catch (_) {} };
   ui.script.value = saved('fastprompter-script') ?? sample;
   ui.copy.textContent = ui.script.value;
-  let speed = Number(saved('fastprompter-speed-v3')) || 1;
+  let speed = 1; // Always start at 1×.
   let running = false;
   let lastTime = 0;
+  let preciseScroll = 0;
   let frame = null;
-  const basePixelsPerSecond = 30; // Restored original portrait version pace
+  const basePixelsPerSecond = 30;
   let stream = null;
   let facing = 'user';
   let mirror = true;
@@ -245,7 +243,7 @@
       btn.classList.toggle('active', active);
       btn.setAttribute('aria-pressed', String(active));
     });
-    save('fastprompter-speed-v3', speed);
+    save('fastprompter-speed', speed);
   }
   setSpeed(speed);
   document.querySelectorAll('[data-speed]').forEach(btn => btn.addEventListener('click', () => setSpeed(btn.dataset.speed)));
@@ -259,7 +257,8 @@
     if (!running) return;
     if (lastTime) {
       const dt = Math.min(0.1, (time - lastTime) / 1000);
-      ui.reader.scrollTop += speed * basePixelsPerSecond * dt;
+      preciseScroll += speed * basePixelsPerSecond * dt;
+      ui.reader.scrollTop = preciseScroll;
       updateProgress();
       if (ui.reader.scrollTop + ui.reader.clientHeight + 2 >= ui.reader.scrollHeight) {
         pause();
@@ -274,6 +273,7 @@
     if (ui.reader.scrollTop + ui.reader.clientHeight + 2 >= ui.reader.scrollHeight) ui.reader.scrollTop = 0;
     if (running) return;
     running = true;
+    preciseScroll = ui.reader.scrollTop;
     lastTime = 0;
     ui.playBtn.textContent = 'Ⅱ Pause scrolling';
     ui.statusLabel.textContent = recorder?.state === 'recording' ? 'REC + SCROLL' : 'SCROLLING';
@@ -289,7 +289,7 @@
   }
   ui.playBtn.addEventListener('click', () => running ? pause() : play());
   ui.resetBtn.addEventListener('click', () => { pause(); ui.reader.scrollTop = 0; updateProgress(); });
-  ui.reader.addEventListener('scroll', updateProgress, {passive:true});
+  ui.reader.addEventListener('scroll', () => { if (!running) preciseScroll = ui.reader.scrollTop; updateProgress(); }, {passive:true});
   ui.script.addEventListener('input', () => {
     ui.copy.textContent = ui.script.value;
     save('fastprompter-script', ui.script.value);
@@ -405,6 +405,7 @@
     return '';
   }
   function startRecording() {
+    if (recorder?.state === 'inactive') { ui.reader.scrollTop = 0; preciseScroll = 0; updateProgress(); }
     if (!stream) { showMessage('Turn on your camera before recording.', true); return; }
     if (typeof MediaRecorder === 'undefined') { showMessage('This browser cannot record video here. Try a current version of Safari or Chrome.', true); return; }
     if (lastDownloadUrl) { URL.revokeObjectURL(lastDownloadUrl); lastDownloadUrl = null; }
@@ -467,20 +468,15 @@
   }
   function stopRecording() {
     if (recorder?.state !== 'recording') return;
+    pause();
     recorder.stop();
     clearInterval(recordingInterval);
     recordingInterval = null;
     ui.recordBtn.textContent = '● Record again';
-    pause();
     ui.statusDot.classList.remove('recording');
     ui.statusLabel.textContent = running ? 'SCROLLING' : 'READY';
     ui.flipBtn.disabled = !stream;
   }
-  ui.restartBtn.addEventListener('click', () => {
-    if (recorder?.state === 'recording') stopRecording();
-    pause(); ui.reader.scrollTop = 0; updateProgress();
-    showMessage('Take stopped. Script reset. Tap Record again to start a fresh take.');
-  });
   ui.recordBtn.addEventListener('click', () => recorder?.state === 'recording' ? stopRecording() : startRecording());
   window.addEventListener('pagehide', () => { stopDrawLoop(); stopTracks(); if (canvasStream) canvasStream.getTracks().forEach(t => t.stop()); if (lastDownloadUrl) URL.revokeObjectURL(lastDownloadUrl); });
   updateProgress();
