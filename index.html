@@ -129,9 +129,10 @@
         <button type="button" class="btn silent full small" id="focusBtn" style="margin-top:13px">⛶ Distraction-free reading mode</button>
       </section>
       <section class="panel" aria-label="Camera and recording controls">
-        <h2>Camera & video</h2>
+        <h2>Camera & video — pause/resume one take</h2>
         <div class="inline-grid"><button class="btn" type="button" id="cameraBtn">◎ Turn camera on</button><button class="btn" type="button" id="flipBtn" disabled>⇄ Flip camera</button></div>
-        <div class="inline-grid" style="margin-top:10px"><button class="btn warn" type="button" id="recordBtn" disabled>● Record video</button><button class="btn" type="button" id="mirrorBtn">⇆ Mirror preview: on</button></div>
+        <div class="inline-grid" style="margin-top:10px"><button class="btn warn" type="button" id="recordBtn" disabled>● Start recording</button><button class="btn" type="button" id="pauseRecordBtn" disabled>Ⅱ Pause take</button></div>
+        <div class="inline-grid" style="margin-top:10px"><button class="btn" type="button" id="finishRecordBtn" disabled>■ Finish & download</button><button class="btn" type="button" id="mirrorBtn">⇆ Mirror preview: on</button></div>
         <div class="inline-grid" style="margin-top:10px"><button class="btn" type="button" id="fitBtn">▣ Full view: on</button><button class="btn" type="button" id="rotateBtn">⟳ Rotate: 0°</button></div>
         <p class="tip"><strong>Vertical 9:16 recording:</strong> Full view shows the entire camera picture without zooming in; empty space may appear around it. Rotate only if the preview appears sideways. The preview is mirrored for reading, but your saved recording is not.</p>
         <p class="tip">Recordings are fixed to 9:16 portrait and contain camera + microphone only, never the scrolling words. Camera and recording require a secure HTTPS page.</p>
@@ -153,7 +154,7 @@
     fontValue:$('fontValue'), playBtn:$('playBtn'), resetBtn:$('resetBtn'), progress:$('progress'),
     camera:$('camera'), source:$('cameraSource'), placeholder:$('placeholder'), cameraBtn:$('cameraBtn'),
     flipBtn:$('flipBtn'), mirrorBtn:$('mirrorBtn'), fitBtn:$('fitBtn'), rotateBtn:$('rotateBtn'), recordBtn:$('recordBtn'),
-    recordMessage:$('recordMessage'), downloadLink:$('downloadLink'),
+    recordMessage:$('recordMessage'), downloadLink:$('downloadLink'), pauseRecordBtn:$('pauseRecordBtn'), finishRecordBtn:$('finishRecordBtn'),
     statusDot:$('statusDot'), statusLabel:$('statusLabel'), focusBtn:$('focusBtn'), focusExit:$('focusExit')
   };
   const sample = `Hello! Here's my little update for today.\n\nThis is a teleprompter that can scroll THREE times, FOUR times, or even TEN times faster.\n\nPaste your own script below, choose your speed, and tap Start scrolling.\n\nThen turn on your camera and hit Record. Only your face and voice are saved—never the script.\n\nAnd that's it. Let's go!`;
@@ -173,6 +174,8 @@
   let recorder = null;
   let chunks = [];
   let recordingStartedAt = 0;
+  let recordedActiveMs = 0;
+  let recordingSegmentStart = 0;
   let lastDownloadUrl = null;
   let recordingInterval = null;
   let viewLoop = null;
@@ -285,7 +288,7 @@
     frame = null;
     lastTime = 0;
     ui.playBtn.textContent = '▶ Start scrolling';
-    ui.statusLabel.textContent = recorder?.state === 'recording' ? 'RECORDING' : 'READY';
+    ui.statusLabel.textContent = recorder?.state === 'paused' ? 'TAKE PAUSED' : recorder?.state === 'recording' ? 'RECORDING' : 'READY';
   }
   ui.playBtn.addEventListener('click', () => running ? pause() : play());
   ui.resetBtn.addEventListener('click', () => { pause(); ui.reader.scrollTop = 0; updateProgress(); });
@@ -330,8 +333,8 @@
   function setCameraControls() {
     const on = Boolean(stream);
     ui.cameraBtn.textContent = on ? '◎ Turn camera off' : '◎ Turn camera on';
-    ui.flipBtn.disabled = !on || recorder?.state === 'recording';
-    ui.recordBtn.disabled = !on || typeof MediaRecorder === 'undefined' || !output.captureStream;
+    ui.flipBtn.disabled = !on || (recorder && recorder.state !== 'inactive');
+    ui.recordBtn.disabled = !on || typeof MediaRecorder === 'undefined' || !output.captureStream || (recorder && recorder.state !== 'inactive');
     ui.camera.classList.toggle('visible', on);
     ui.placeholder.classList.toggle('hidden', on);
   }
@@ -378,7 +381,7 @@
     showMessage(silent ? 'Camera ready. Microphone was not allowed, so the video will be silent.' : 'Camera ready. Preview and recording use the same vertical 9:16 frame.');
   }
   function stopCamera() {
-    if (recorder?.state === 'recording') stopRecording();
+    if (recorder && recorder.state !== 'inactive') stopRecording();
     stopDrawLoop();
     stopTracks();
     ui.source.pause(); ui.source.srcObject = null;
@@ -387,7 +390,7 @@
   }
   ui.cameraBtn.addEventListener('click', () => stream ? stopCamera() : startCamera());
   ui.flipBtn.addEventListener('click', async () => {
-    if (recorder?.state === 'recording') return;
+    if (recorder && recorder.state !== 'inactive') return;
     facing = facing === 'user' ? 'environment' : 'user';
     await startCamera();
   });
@@ -452,18 +455,23 @@
       return;
     }
     recordingStartedAt = Date.now();
-    ui.recordBtn.textContent = '■ Stop recording';
+    recordingSegmentStart = recordingStartedAt;
+    recordedActiveMs = 0;
+    ui.recordBtn.textContent = '● Recording…';
+    ui.recordBtn.disabled = true;
+    ui.pauseRecordBtn.disabled = false;
+    ui.finishRecordBtn.disabled = false;
     ui.statusDot.classList.add('recording');
     ui.statusLabel.textContent = running ? 'REC + SCROLL' : 'RECORDING';
     ui.flipBtn.disabled = true;
-    showMessage('Recording 9:16 portrait video. The script is not included.');
+    showMessage('Recording. Pause take to cut out mistakes/breaks, then Resume. Finish for one video.');
     if (!running) play();
     recordingInterval = setInterval(() => {
       if (recorder?.state !== 'recording') return;
-      const seconds = Math.floor((Date.now() - recordingStartedAt) / 1000);
+      const seconds = Math.floor((recordedActiveMs + (recorder.state === 'recording' ? Date.now() - recordingSegmentStart : 0)) / 1000);
       const mins = String(Math.floor(seconds / 60)).padStart(2,'0');
       const secs = String(seconds % 60).padStart(2,'0');
-      ui.recordBtn.textContent = '■ Stop ' + mins + ':' + secs;
+      ui.recordBtn.textContent = '● Recorded ' + mins + ':' + secs;
     }, 500);
   }
   function stopRecording() {
@@ -477,7 +485,30 @@
     ui.statusLabel.textContent = running ? 'SCROLLING' : 'READY';
     ui.flipBtn.disabled = !stream;
   }
-  ui.recordBtn.addEventListener('click', () => recorder?.state === 'recording' ? stopRecording() : startRecording());
+  ui.recordBtn.addEventListener('click', startRecording);
+  ui.pauseRecordBtn.addEventListener('click', () => {
+    if (!recorder) return;
+    try {
+      if (recorder.state === 'recording') {
+        recorder.pause();
+        recordedActiveMs += Date.now() - recordingSegmentStart;
+        pause(); // Freeze the teleprompter at this exact word.
+        ui.pauseRecordBtn.textContent = '▶ Resume take';
+        ui.statusLabel.textContent = 'TAKE PAUSED';
+        ui.statusDot.classList.remove('recording');
+        showMessage('Paused: this break is not recorded. Resume when ready.');
+      } else if (recorder.state === 'paused') {
+        recorder.resume();
+        recordingSegmentStart = Date.now();
+        play(); // Continue at the same scroll position.
+        ui.pauseRecordBtn.textContent = 'Ⅱ Pause take';
+        ui.statusLabel.textContent = 'REC + SCROLL';
+        ui.statusDot.classList.add('recording');
+        showMessage('Recording resumed in the same video.');
+      }
+    } catch (error) { showMessage('Pause/resume failed: ' + (error?.message || 'browser unsupported'), true); }
+  });
+  ui.finishRecordBtn.addEventListener('click', stopRecording);
   window.addEventListener('pagehide', () => { stopDrawLoop(); stopTracks(); if (canvasStream) canvasStream.getTracks().forEach(t => t.stop()); if (lastDownloadUrl) URL.revokeObjectURL(lastDownloadUrl); });
   updateProgress();
 })();
