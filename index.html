@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1020">
+  <title>Fast Prompter — Portrait Camera Fix</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --panel:#151c2e; --panel2:#1b2540; --stroke:#2c3651; --muted:#abb7cf; --text:#f9fbff; --accent:#b399ff; --mint:#9debd7; }
+    * { box-sizing:border-box; }
+    html { -webkit-text-size-adjust:100%; }
+    body { margin:0; padding:env(safe-area-inset-top) max(14px, env(safe-area-inset-right)) max(34px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); background:radial-gradient(ellipse at 15% 0%,#20234b 0%, transparent 40%), var(--bg); color:var(--text); font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    button, input, textarea { font:inherit; }
+    button { touch-action:manipulation; cursor:pointer; }
+    button:focus-visible, a:focus-visible, textarea:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
+    .wrap { max-width:1150px; margin:auto; }
+    header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:24px 0 20px; }
+    .brand { display:flex; align-items:center; gap:10px; font-size:clamp(21px,3.5vw,30px); font-weight:800; letter-spacing:-.06em; }
+    .brand-mark { display:grid; place-items:center; width:35px; height:35px; background:linear-gradient(135deg,#bdaaff,#73dfc4); color:#151c2e; border-radius:12px; font-size:22px; }
+    .tag { border:1px solid #56517b; background:#211f38; padding:7px 12px; border-radius:999px; color:#e8defe; font-size:13px; font-weight:700; }
+    .intro { margin:-5px 0 20px; color:var(--muted); line-height:1.5; }
+    .layout { display:grid; grid-template-columns:minmax(0,480px) minmax(0,1fr); gap:22px; align-items:start; }
+    .stage-holder { display:flex; justify-content:center; }
+    .stage { position:relative; width:min(100%,420px); aspect-ratio:9/16; max-height:min(73dvh,746px); overflow:hidden; isolation:isolate; border-radius:26px; border:1px solid #59627c; background:radial-gradient(circle at 50% 20%, #283755, #0c101b 72%); box-shadow:0 26px 60px #0008,0 0 0 5px #ffffff09; }
+    .camera { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0; transition:opacity .25s; }
+    .camera-source { position:absolute; top:0; left:0; width:2px; height:2px; opacity:.001; pointer-events:none; }
+    .camera.visible { opacity:1; }
+    .camera.mirror { transform:scaleX(-1); }
+    .camera-placeholder { position:absolute; inset:0; display:grid; place-content:center; gap:12px; text-align:center; padding:30px; color:#a3b3cf; font-size:15px; }
+    .camera-placeholder .camera-icon { font-size:58px; opacity:.6; }
+    .shade { pointer-events:none; position:absolute; inset:0; background:linear-gradient(to bottom, #000a, #0002 24%, #0007 68%, #000d); }
+    .reader { position:absolute; inset:0; z-index:2; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; -ms-overflow-style:none; text-align:center; -webkit-mask-image:linear-gradient(to bottom,transparent 5%,#000 20%,#000 82%,transparent 99%); mask-image:linear-gradient(to bottom,transparent 5%,#000 20%,#000 82%,transparent 99%); }
+    .reader::-webkit-scrollbar { display:none; }
+    .copy { padding:48% 8% 70%; font-size:var(--read-size,34px); line-height:1.42; font-weight:750; letter-spacing:-.025em; white-space:pre-wrap; overflow-wrap:anywhere; text-shadow:0 2px 8px #000b,0 0 22px #0008; }
+    .eyeline { position:absolute; top:35%; left:10%; right:10%; z-index:1; height:1px; background:linear-gradient(to right,transparent,#ffffff44,transparent); pointer-events:none; }
+    .stage-top { position:absolute; z-index:4; top:15px; left:15px; right:15px; display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:12px; font-weight:750; }
+    .pill { border:1px solid #ffffff55; border-radius:50px; padding:7px 10px; backdrop-filter:blur(12px); background:#080b1bbb; }
+    .status { display:flex; align-items:center; gap:6px; }
+    .dot { width:7px; height:7px; display:inline-block; border-radius:50%; background:#9debd7; }
+    .dot.recording { background:#ff646b; box-shadow:0 0 0 5px #ff646b30; animation:pulse 1s infinite; }
+    @keyframes pulse { 50% { opacity:.45; } }
+    .progress { z-index:5; position:absolute; bottom:0; left:0; right:0; height:5px; background:#ffffff2b; }
+    .progress-inner { height:100%; width:0; background:linear-gradient(to right,#c09eff,#9debd7); }
+    .controls { display:flex; flex-direction:column; gap:16px; }
+    .panel { border:1px solid var(--stroke); border-radius:19px; background:linear-gradient(145deg,#1b233a,#141b2d); padding:19px; box-shadow:0 12px 34px #0002; }
+    .panel h2 { margin:0 0 15px; font-size:16px; letter-spacing:-.025em; }
+    .speed-top { display:flex; align-items:end; justify-content:space-between; gap:12px; }
+    .speed-number { font-size:50px; line-height:.95; font-weight:850; letter-spacing:-.07em; font-variant-numeric:tabular-nums; }
+    .minor { color:var(--muted); font-size:13px; line-height:1.45; }
+    .speed-presets { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0; }
+    .preset { border:1px solid #4c5773; border-radius:12px; background:#222c46; color:#e7ecfc; font-weight:800; padding:10px 12px; min-width:51px; }
+    .preset.active { color:#181626; border-color:var(--accent); background:var(--accent); }
+    .range-line { display:flex; align-items:center; gap:11px; }
+    input[type="range"] { width:100%; accent-color:var(--accent); cursor:pointer; }
+    .primary-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .btn { display:inline-flex; justify-content:center; align-items:center; gap:7px; text-align:center; border-radius:13px; border:1px solid #4a5671; background:#26334f; color:white; min-height:48px; padding:11px 13px; font-size:14px; font-weight:800; }
+    .btn:disabled { opacity:.45; cursor:not-allowed; }
+    .btn.primary { background:var(--accent); color:#181626; border-color:var(--accent); }
+    .btn.warn { background:#e55160; color:white; border-color:#e55160; }
+    .btn.silent { background:transparent; }
+    .btn.full { width:100%; }
+    .btn.small { min-height:40px; font-size:13px; }
+    .control-row { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:13px; }
+    .control-row label { color:#e8edfa; font-size:14px; font-weight:650; }
+    .small-range { max-width:175px; }
+    textarea { display:block; width:100%; min-height:176px; padding:15px; background:#0e1627; border:1px solid #52617d; border-radius:13px; color:var(--text); resize:vertical; line-height:1.55; font-size:15px; }
+    .tip { font-size:12px; color:#aebad1; line-height:1.6; margin:12px 0 0; }
+    .message { font-size:13px; padding:11px 12px; background:#101b2c; color:#bfeadf; border:1px solid #345459; border-radius:11px; line-height:1.45; }
+    .message.error { color:#ffd7d8; background:#32202a; border-color:#804751; }
+    .download { display:block; padding:13px; border-radius:12px; text-align:center; background:#18473f; border:1px solid #3b9084; color:#c7fff0; font-size:14px; font-weight:800; text-decoration:none; }
+    .hidden { display:none !important; }
+    .inline-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    footer { color:#8798b6; padding:28px 0 10px; font-size:12px; line-height:1.5; }
+    body.focus-mode { overflow:hidden; padding:0; }
+    body.focus-mode header, body.focus-mode .intro, body.focus-mode .controls, body.focus-mode footer { display:none; }
+    body.focus-mode .layout { display:block; }
+    body.focus-mode .stage-holder { position:fixed; inset:0; z-index:25; background:#050811; display:grid; place-items:center; }
+    body.focus-mode .stage { height:100dvh; max-height:100dvh; max-width:100vw; width:min(100vw,56.25dvh); border:none; border-radius:0; box-shadow:none; }
+    .focus-exit { display:none; position:absolute; z-index:7; top:54px; right:13px; padding:7px 9px; border:1px solid #ffffff73; border-radius:9px; color:#fff; background:#101525c9; font-size:12px; font-weight:800; }
+    body.focus-mode .focus-exit { display:block; }
+    @media (max-width:830px) {
+      header { padding-top:17px; padding-bottom:15px; }
+      .layout { grid-template-columns:1fr; gap:20px; }
+      .stage { width:min(100%,365px); max-height:none; }
+      .controls { max-width:620px; width:100%; margin:auto; }
+      .intro { font-size:14px; }
+    }
+    @media (max-width:390px) { .panel { padding:15px; } .speed-presets { gap:6px; } .preset { padding:9px 10px; min-width:46px; } }
+    @media (prefers-reduced-motion:reduce) { .dot.recording { animation:none; } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header><div class="brand"><span class="brand-mark" aria-hidden="true">↟</span> Fast Prompter</div><span class="tag">1× to 10× speed</span></header>
+  <p class="intro">A faster teleprompter for short videos. Read your scrolling script while filming; the words won't appear in your saved recording.</p>
+  <main class="layout">
+    <div class="stage-holder">
+      <div class="stage" id="stage" aria-label="Video preview and scrolling script">
+        <video class="camera-source" id="cameraSource" autoplay muted playsinline aria-hidden="true"></video>
+        <canvas class="camera mirror" id="camera" width="720" height="1280" aria-label="Portrait camera preview"></canvas>
+        <div class="camera-placeholder" id="placeholder"><div class="camera-icon" aria-hidden="true">◉</div><span>Camera preview appears here.<br>Scrolling works without a camera, too.</span></div>
+        <div class="shade"></div><div class="eyeline"></div>
+        <div class="reader" id="reader" role="region" aria-label="Scrolling teleprompter text"><div class="copy" id="copy"></div></div>
+        <div class="stage-top"><div class="pill status"><span class="dot" id="statusDot"></span><span id="statusLabel">READY</span></div><div class="pill" id="stageSpeed">3× SPEED</div></div>
+        <button class="focus-exit" id="focusExit" type="button" aria-label="Exit focus mode">✕ Exit</button>
+        <div class="progress"><div class="progress-inner" id="progress"></div></div>
+      </div>
+    </div>
+    <div class="controls">
+      <section class="panel" aria-label="Scrolling speed">
+        <div class="speed-top"><div><h2>Scrolling speed</h2><div class="speed-number" id="speedNumber">3×</div></div><span class="minor">1× = relaxed<br>4× = super fast</span></div>
+        <div class="speed-presets" id="presets" role="group" aria-label="Speed presets">
+          <button class="preset" data-speed="1" type="button">1×</button>
+          <button class="preset" data-speed="2" type="button">2×</button>
+          <button class="preset active" data-speed="3" type="button">3×</button>
+          <button class="preset" data-speed="4" type="button">4×</button>
+          <button class="preset" data-speed="5" type="button">5×</button>
+          <button class="preset" data-speed="6" type="button">6×</button>
+          <button class="preset" data-speed="8" type="button">8×</button>
+          <button class="preset" data-speed="10" type="button">10×</button>
+        </div>
+        <div class="range-line"><span class="minor">0.5×</span><input type="range" id="speedRange" min="0.5" max="10" value="3" step="0.25" aria-label="Scrolling speed"><span class="minor">10×</span></div>
+        <p class="tip">Speed is relative to this app's 1× baseline, not TikTok's exact speed.</p>
+      </section>
+      <section class="panel" aria-label="Playback controls">
+        <h2>Read your script</h2>
+        <div class="primary-actions"><button type="button" class="btn primary" id="playBtn">▶ Start scrolling</button><button type="button" class="btn" id="resetBtn">↺ Start over</button></div>
+        <div class="control-row"><label for="fontRange">Text size <span class="minor" id="fontValue">34 px</span></label><input class="small-range" id="fontRange" type="range" min="20" max="62" value="34" aria-label="Text size"></div>
+        <button type="button" class="btn silent full small" id="focusBtn" style="margin-top:13px">⛶ Distraction-free reading mode</button>
+      </section>
+      <section class="panel" aria-label="Camera and recording controls">
+        <h2>Camera & video</h2>
+        <div class="inline-grid"><button class="btn" type="button" id="cameraBtn">◎ Turn camera on</button><button class="btn" type="button" id="flipBtn" disabled>⇄ Flip camera</button></div>
+        <div class="inline-grid" style="margin-top:10px"><button class="btn warn" type="button" id="recordBtn" disabled>● Record video</button><button class="btn" type="button" id="mirrorBtn">⇆ Mirror preview: on</button></div>
+        <div class="inline-grid" style="margin-top:10px"><button class="btn" type="button" id="fitBtn">▣ Full view: on</button><button class="btn" type="button" id="rotateBtn">⟳ Rotate: 0°</button></div>
+        <p class="tip"><strong>Vertical 9:16 recording:</strong> Full view shows the entire camera picture without zooming in; empty space may appear around it. Rotate only if the preview appears sideways. The preview is mirrored for reading, but your saved recording is not.</p>
+        <p class="tip">Recordings are fixed to 9:16 portrait and contain camera + microphone only, never the scrolling words. Camera and recording require a secure HTTPS page.</p>
+        <div id="recordMessage" class="message hidden" role="status" style="margin-top:12px"></div>
+        <a id="downloadLink" class="download hidden" href="#" download="fast-prompter-video.webm" style="margin-top:12px">↓ Download recorded video</a>
+      </section>
+      <section class="panel" aria-label="Edit script"><h2>Your script</h2><textarea id="script" spellcheck="true" aria-label="Paste your script" placeholder="Paste the words you want to read here..."></textarea><p class="tip">Your script stays on this device. It's never uploaded by this page.</p></section>
+    </div>
+  </main>
+  <footer>Tip: On a phone, open this page in Safari or Chrome and grant camera + microphone access. If your browser doesn't allow camera access from a downloaded HTML file, open it from a secure (HTTPS) web host. This is a standalone TikTok-style teleprompter, not an in-TikTok effect.</footer>
+</div>
+<script>
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const ui = {
+    reader:$('reader'), copy:$('copy'), script:$('script'), speedRange:$('speedRange'),
+    speedNumber:$('speedNumber'), stageSpeed:$('stageSpeed'), fontRange:$('fontRange'),
+    fontValue:$('fontValue'), playBtn:$('playBtn'), resetBtn:$('resetBtn'), progress:$('progress'),
+    camera:$('camera'), source:$('cameraSource'), placeholder:$('placeholder'), cameraBtn:$('cameraBtn'),
+    flipBtn:$('flipBtn'), mirrorBtn:$('mirrorBtn'), fitBtn:$('fitBtn'), rotateBtn:$('rotateBtn'), recordBtn:$('recordBtn'),
+    recordMessage:$('recordMessage'), downloadLink:$('downloadLink'),
+    statusDot:$('statusDot'), statusLabel:$('statusLabel'), focusBtn:$('focusBtn'), focusExit:$('focusExit')
+  };
+  const sample = `Hello! Here's my little update for today.\n\nThis is a teleprompter that can scroll THREE times, FOUR times, or even TEN times faster.\n\nPaste your own script below, choose your speed, and tap Start scrolling.\n\nThen turn on your camera and hit Record. Only your face and voice are saved—never the script.\n\nAnd that's it. Let's go!`;
+  const saved = key => { try { return localStorage.getItem(key); } catch (_) { return null; } };
+  const save = (key, val) => { try { localStorage.setItem(key, String(val)); } catch (_) {} };
+  ui.script.value = saved('fastprompter-script') ?? sample;
+  ui.copy.textContent = ui.script.value;
+  let speed = Number(saved('fastprompter-speed')) || 3;
+  let running = false;
+  let lastTime = 0;
+  let frame = null;
+  const basePixelsPerSecond = 30;
+  let stream = null;
+  let facing = 'user';
+  let mirror = true;
+  let recorder = null;
+  let chunks = [];
+  let recordingStartedAt = 0;
+  let lastDownloadUrl = null;
+  let recordingInterval = null;
+  let viewLoop = null;
+  let composedStream = null;
+  let canvasStream = null;
+  let fullView = saved('fastprompter-full-view') !== 'false';
+  let rotation = Number(saved('fastprompter-rotation')) || 0;
+  const output = ui.camera;
+  const ctx = output.getContext('2d', {alpha:false});
+
+  // Draw camera pixels into a physically portrait canvas. Recording the original
+  // camera stream can produce landscape files on iOS even with a portrait preview.
+  function paintFrame() {
+    ctx.fillStyle = '#111827';
+    ctx.fillRect(0, 0, output.width, output.height);
+    const video = ui.source;
+    if (!stream || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+    const vW = video.videoWidth, vH = video.videoHeight;
+    const sideways = rotation % 180 !== 0;
+    const effectiveW = sideways ? vH : vW;
+    const effectiveH = sideways ? vW : vH;
+    const factor = fullView ? Math.min(output.width / effectiveW, output.height / effectiveH)
+                            : Math.max(output.width / effectiveW, output.height / effectiveH);
+    ctx.save();
+    ctx.translate(output.width / 2, output.height / 2);
+    ctx.rotate(rotation * Math.PI / 180);
+    ctx.drawImage(video, -vW * factor / 2, -vH * factor / 2, vW * factor, vH * factor);
+    ctx.restore();
+  }
+  function drawLoop() {
+    paintFrame();
+    viewLoop = requestAnimationFrame(drawLoop);
+  }
+  function startDrawLoop() {
+    if (viewLoop != null) cancelAnimationFrame(viewLoop);
+    drawLoop();
+  }
+  function stopDrawLoop() {
+    if (viewLoop != null) cancelAnimationFrame(viewLoop);
+    viewLoop = null;
+  }
+  function updateFrameButtons() {
+    ui.fitBtn.textContent = '▣ Full view: ' + (fullView ? 'on' : 'off');
+    ui.rotateBtn.textContent = '⟳ Rotate: ' + rotation + '°';
+  }
+  updateFrameButtons();
+  ui.fitBtn.addEventListener('click', () => {
+    fullView = !fullView;
+    save('fastprompter-full-view', fullView);
+    updateFrameButtons();
+    paintFrame();
+  });
+  ui.rotateBtn.addEventListener('click', () => {
+    rotation = (rotation + 90) % 360;
+    save('fastprompter-rotation', rotation);
+    updateFrameButtons();
+    paintFrame();
+  });
+
+  function fmtSpeed(value) { return (Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0$/, '')) + '×'; }
+  function setSpeed(value) {
+    speed = Math.max(0.5, Math.min(10, Number(value) || 1));
+    ui.speedRange.value = String(speed);
+    ui.speedNumber.textContent = fmtSpeed(speed);
+    ui.stageSpeed.textContent = fmtSpeed(speed) + ' SPEED';
+    document.querySelectorAll('[data-speed]').forEach(btn => {
+      const active = Number(btn.dataset.speed) === speed;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-pressed', String(active));
+    });
+    save('fastprompter-speed', speed);
+  }
+  setSpeed(speed);
+  document.querySelectorAll('[data-speed]').forEach(btn => btn.addEventListener('click', () => setSpeed(btn.dataset.speed)));
+  ui.speedRange.addEventListener('input', () => setSpeed(ui.speedRange.value));
+
+  function updateProgress() {
+    const max = Math.max(0, ui.reader.scrollHeight - ui.reader.clientHeight);
+    ui.progress.style.width = (max ? Math.min(100, ui.reader.scrollTop / max * 100) : 0) + '%';
+  }
+  function tick(time) {
+    if (!running) return;
+    if (lastTime) {
+      const dt = Math.min(0.1, (time - lastTime) / 1000);
+      ui.reader.scrollTop += speed * basePixelsPerSecond * dt;
+      updateProgress();
+      if (ui.reader.scrollTop + ui.reader.clientHeight + 2 >= ui.reader.scrollHeight) {
+        pause();
+        return;
+      }
+    }
+    lastTime = time;
+    frame = requestAnimationFrame(tick);
+  }
+  function play() {
+    if (!ui.script.value.trim()) { showMessage('Paste a script first.', true); ui.script.focus(); return; }
+    if (ui.reader.scrollTop + ui.reader.clientHeight + 2 >= ui.reader.scrollHeight) ui.reader.scrollTop = 0;
+    if (running) return;
+    running = true;
+    lastTime = 0;
+    ui.playBtn.textContent = 'Ⅱ Pause scrolling';
+    ui.statusLabel.textContent = recorder?.state === 'recording' ? 'REC + SCROLL' : 'SCROLLING';
+    frame = requestAnimationFrame(tick);
+  }
+  function pause() {
+    running = false;
+    if (frame !== null) cancelAnimationFrame(frame);
+    frame = null;
+    lastTime = 0;
+    ui.playBtn.textContent = '▶ Start scrolling';
+    ui.statusLabel.textContent = recorder?.state === 'recording' ? 'RECORDING' : 'READY';
+  }
+  ui.playBtn.addEventListener('click', () => running ? pause() : play());
+  ui.resetBtn.addEventListener('click', () => { pause(); ui.reader.scrollTop = 0; updateProgress(); });
+  ui.reader.addEventListener('scroll', updateProgress, {passive:true});
+  ui.script.addEventListener('input', () => {
+    ui.copy.textContent = ui.script.value;
+    save('fastprompter-script', ui.script.value);
+    pause(); ui.reader.scrollTop = 0; updateProgress();
+  });
+  function setFont(value) {
+    const px = Math.max(20, Math.min(62, Number(value) || 34));
+    document.documentElement.style.setProperty('--read-size', px + 'px');
+    ui.fontRange.value = px;
+    ui.fontValue.textContent = px + ' px';
+    save('fastprompter-font', px);
+  }
+  setFont(Number(saved('fastprompter-font')) || 34);
+  ui.fontRange.addEventListener('input', () => setFont(ui.fontRange.value));
+
+  function setFocus(on) {
+    document.body.classList.toggle('focus-mode', on);
+    ui.focusBtn.textContent = on ? 'Exit reading mode' : '⛶ Distraction-free reading mode';
+    updateProgress();
+  }
+  ui.focusBtn.addEventListener('click', () => setFocus(!document.body.classList.contains('focus-mode')));
+  ui.focusExit.addEventListener('click', () => setFocus(false));
+  document.addEventListener('keydown', event => {
+    const tag = document.activeElement?.tagName;
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+    if (event.code === 'Space') { event.preventDefault(); running ? pause() : play(); }
+    if (event.code === 'Escape') setFocus(false);
+    if (event.code === 'ArrowUp') { event.preventDefault(); setSpeed(speed + .5); }
+    if (event.code === 'ArrowDown') { event.preventDefault(); setSpeed(speed - .5); }
+  });
+
+  function showMessage(msg, error=false) {
+    ui.recordMessage.textContent = msg;
+    ui.recordMessage.classList.remove('hidden');
+    ui.recordMessage.classList.toggle('error', error);
+  }
+  function stopTracks() { if (stream) stream.getTracks().forEach(track => track.stop()); stream = null; }
+  function setCameraControls() {
+    const on = Boolean(stream);
+    ui.cameraBtn.textContent = on ? '◎ Turn camera off' : '◎ Turn camera on';
+    ui.flipBtn.disabled = !on || recorder?.state === 'recording';
+    ui.recordBtn.disabled = !on || typeof MediaRecorder === 'undefined' || !output.captureStream;
+    ui.camera.classList.toggle('visible', on);
+    ui.placeholder.classList.toggle('hidden', on);
+  }
+  async function startCamera() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showMessage('Camera unavailable here. Open the website in Safari over HTTPS and allow camera access.', true);
+      return;
+    }
+    let nextStream;
+    let silent = false;
+    try {
+      // Request sensor dimensions in landscape order. Current iOS Safari versions
+      // can return a sideways/zoomed track for 1080x1920 portrait constraints.
+      nextStream = await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:{ideal:facing},width:{ideal:1280},height:{ideal:720}},
+        audio:{echoCancellation:true,noiseSuppression:true}
+      });
+    } catch (error) {
+      try {
+        nextStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing}},audio:false});
+        silent = true;
+      } catch (again) {
+        showMessage('Could not open the camera: ' + (again?.message || 'check Safari permission and HTTPS.'), true);
+        return;
+      }
+    }
+    stopDrawLoop();
+    stopTracks();
+    stream = nextStream;
+    ui.source.srcObject = stream;
+    ui.camera.classList.toggle('mirror', mirror && facing === 'user');
+    try { await ui.source.play(); } catch (_) { /* user can retry after tapping */ }
+    // Wait for real video dimensions and the first painted frame, not just
+    // getUserMedia(); on iOS these can change after the camera starts.
+    if (ui.source.readyState < 2) {
+      await new Promise(resolve => {
+        const finish = () => { ui.source.removeEventListener('loadeddata', finish); resolve(); };
+        ui.source.addEventListener('loadeddata', finish, {once:true});
+        setTimeout(finish, 2000);
+      });
+    }
+    startDrawLoop();
+    setCameraControls();
+    showMessage(silent ? 'Camera ready. Microphone was not allowed, so the video will be silent.' : 'Camera ready. Preview and recording use the same vertical 9:16 frame.');
+  }
+  function stopCamera() {
+    if (recorder?.state === 'recording') stopRecording();
+    stopDrawLoop();
+    stopTracks();
+    ui.source.pause(); ui.source.srcObject = null;
+    setCameraControls();
+    showMessage('Camera off. Script scrolling still works.');
+  }
+  ui.cameraBtn.addEventListener('click', () => stream ? stopCamera() : startCamera());
+  ui.flipBtn.addEventListener('click', async () => {
+    if (recorder?.state === 'recording') return;
+    facing = facing === 'user' ? 'environment' : 'user';
+    await startCamera();
+  });
+  ui.mirrorBtn.addEventListener('click', () => {
+    mirror = !mirror;
+    ui.mirrorBtn.textContent = '⇆ Mirror preview: ' + (mirror ? 'on' : 'off');
+    // Mirroring the on-screen canvas does not mirror the recorded video.
+    ui.camera.classList.toggle('mirror', mirror && facing === 'user');
+  });
+  function supportedMime() {
+    if (!window.MediaRecorder?.isTypeSupported) return '';
+    for (const type of ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4;codecs=h264,aac','video/mp4','video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']) {
+      if (MediaRecorder.isTypeSupported(type)) return type;
+    }
+    return '';
+  }
+  function startRecording() {
+    if (!stream) { showMessage('Turn on your camera before recording.', true); return; }
+    if (typeof MediaRecorder === 'undefined') { showMessage('This browser cannot record video here. Try a current version of Safari or Chrome.', true); return; }
+    if (lastDownloadUrl) { URL.revokeObjectURL(lastDownloadUrl); lastDownloadUrl = null; }
+    ui.downloadLink.classList.add('hidden');
+    chunks = [];
+    try {
+      const mimeType = supportedMime();
+      if (!output.captureStream) throw new Error('Portrait video recording is unsupported in this browser. Try updating iOS Safari.');
+      // Recording a 9:16 canvas guarantees portrait pixel dimensions, instead
+      // of relying on camera metadata. Keep the microphone's original audio.
+      paintFrame();
+      canvasStream = output.captureStream(30);
+      composedStream = new MediaStream([
+        ...canvasStream.getVideoTracks(),
+        ...stream.getAudioTracks()
+      ]);
+      recorder = mimeType ? new MediaRecorder(composedStream, {mimeType}) : new MediaRecorder(composedStream);
+      recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data); };
+      recorder.onerror = () => showMessage('The browser had a recording problem. Try again.', true);
+      recorder.onstop = () => {
+        clearInterval(recordingInterval);
+        recordingInterval = null;
+        if (canvasStream) canvasStream.getTracks().forEach(t => t.stop());
+        canvasStream = null;
+        composedStream = null;
+        const type = recorder.mimeType || (chunks[0] && chunks[0].type) || 'video/webm';
+        if (!chunks.length) { showMessage('No video was saved. Try recording again.', true); return; }
+        const blob = new Blob(chunks, {type});
+        const ext = type.includes('mp4') ? 'mp4' : 'webm';
+        lastDownloadUrl = URL.createObjectURL(blob);
+        ui.downloadLink.href = lastDownloadUrl;
+        ui.downloadLink.download = 'fast-prompter-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.' + ext;
+        ui.downloadLink.textContent = '↓ Download your ' + ext.toUpperCase() + ' video';
+        ui.downloadLink.classList.remove('hidden');
+        showMessage('Portrait 9:16 video ready! Download it and open it in Photos to verify before uploading to TikTok.');
+      };
+      recorder.start(1000);
+    } catch (error) {
+      showMessage('Recording could not start: ' + (error?.message || 'unsupported browser format.'), true);
+      if (canvasStream) canvasStream.getTracks().forEach(t => t.stop());
+      canvasStream = null;
+      composedStream = null;
+      recorder = null;
+      return;
+    }
+    recordingStartedAt = Date.now();
+    ui.recordBtn.textContent = '■ Stop recording';
+    ui.statusDot.classList.add('recording');
+    ui.statusLabel.textContent = running ? 'REC + SCROLL' : 'RECORDING';
+    ui.flipBtn.disabled = true;
+    showMessage('Recording 9:16 portrait video. The script is not included.');
+    if (!running) play();
+    recordingInterval = setInterval(() => {
+      if (recorder?.state !== 'recording') return;
+      const seconds = Math.floor((Date.now() - recordingStartedAt) / 1000);
+      const mins = String(Math.floor(seconds / 60)).padStart(2,'0');
+      const secs = String(seconds % 60).padStart(2,'0');
+      ui.recordBtn.textContent = '■ Stop ' + mins + ':' + secs;
+    }, 500);
+  }
+  function stopRecording() {
+    if (recorder?.state !== 'recording') return;
+    recorder.stop();
+    clearInterval(recordingInterval);
+    recordingInterval = null;
+    ui.recordBtn.textContent = '● Record video';
+    ui.statusDot.classList.remove('recording');
+    ui.statusLabel.textContent = running ? 'SCROLLING' : 'READY';
+    ui.flipBtn.disabled = !stream;
+  }
+  ui.recordBtn.addEventListener('click', () => recorder?.state === 'recording' ? stopRecording() : startRecording());
+  window.addEventListener('pagehide', () => { stopDrawLoop(); stopTracks(); if (canvasStream) canvasStream.getTracks().forEach(t => t.stop()); if (lastDownloadUrl) URL.revokeObjectURL(lastDownloadUrl); });
+  updateProgress();
+})();
+</script>
+</body>
+</html>
