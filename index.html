@@ -108,9 +108,12 @@
     </div>
     <div class="controls">
       <section class="panel" aria-label="Scrolling speed">
-        <div class="speed-top"><div><h2>Scrolling speed</h2><div class="speed-number" id="speedNumber">1×</div></div><span class="minor">1× = very slow<br>4× = faster</span></div>
+        <div class="speed-top"><div><h2>Scrolling speed</h2><div class="speed-number" id="speedNumber">1×</div></div><span class="minor">1× = original pace<br>Fine steps between 1×–2×</span></div>
         <div class="speed-presets" id="presets" role="group" aria-label="Speed presets">
           <button class="preset active" data-speed="1" type="button">1×</button>
+          <button class="preset" data-speed="1.25" type="button">1.25×</button>
+          <button class="preset" data-speed="1.5" type="button">1.5×</button>
+          <button class="preset" data-speed="1.75" type="button">1.75×</button>
           <button class="preset" data-speed="2" type="button">2×</button>
           <button class="preset" data-speed="3" type="button">3×</button>
           <button class="preset" data-speed="4" type="button">4×</button>
@@ -119,8 +122,8 @@
           <button class="preset" data-speed="8" type="button">8×</button>
           <button class="preset" data-speed="10" type="button">10×</button>
         </div>
-        <div class="range-line"><span class="minor">0.25×</span><input type="range" id="speedRange" min="0.25" max="10" value="1" step="0.25" aria-label="Scrolling speed"><span class="minor">10×</span></div>
-        <p class="tip">Speed is relative to this app's 1× baseline, not TikTok's exact speed.</p>
+        <div class="range-line"><span class="minor">0.5×</span><input type="range" id="speedRange" min="0.5" max="10" value="1" step="0.05" aria-label="Scrolling speed"><span class="minor">10×</span></div>
+        <p class="tip">Original scrolling pace restored. Use 1.25×, 1.5×, 1.75× or the slider for precise speeds. Start/Pause scrolling and Stop/Record again remain separate.</p>
       </section>
       <section class="panel" aria-label="Playback controls">
         <h2>Read your script</h2>
@@ -161,11 +164,11 @@
   const save = (key, val) => { try { localStorage.setItem(key, String(val)); } catch (_) {} };
   ui.script.value = saved('fastprompter-script') ?? sample;
   ui.copy.textContent = ui.script.value;
-  let speed = Number(saved('fastprompter-speed-v2')) || 1;
+  let speed = Number(saved('fastprompter-speed-v3')) || 1;
   let running = false;
   let lastTime = 0;
   let frame = null;
-  const basePixelsPerSecond = 10;
+  const basePixelsPerSecond = 30; // Restored original portrait version pace
   let stream = null;
   let facing = 'user';
   let mirror = true;
@@ -233,7 +236,7 @@
 
   function fmtSpeed(value) { return (Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0$/, '')) + '×'; }
   function setSpeed(value) {
-    speed = Math.max(0.25, Math.min(10, Number(value) || 1));
+    speed = Math.max(0.5, Math.min(10, Number(value) || 1));
     ui.speedRange.value = String(speed);
     ui.speedNumber.textContent = fmtSpeed(speed);
     ui.stageSpeed.textContent = fmtSpeed(speed) + ' SPEED';
@@ -242,7 +245,7 @@
       btn.classList.toggle('active', active);
       btn.setAttribute('aria-pressed', String(active));
     });
-    save('fastprompter-speed-v2', speed);
+    save('fastprompter-speed-v3', speed);
   }
   setSpeed(speed);
   document.querySelectorAll('[data-speed]').forEach(btn => btn.addEventListener('click', () => setSpeed(btn.dataset.speed)));
