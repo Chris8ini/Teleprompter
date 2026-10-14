@@ -29,7 +29,7 @@
     .camera-placeholder { position:absolute; inset:0; display:grid; place-content:center; gap:12px; text-align:center; padding:30px; color:#a3b3cf; font-size:15px; }
     .camera-placeholder .camera-icon { font-size:58px; opacity:.6; }
     .shade { pointer-events:none; position:absolute; inset:0; background:linear-gradient(to bottom, #000a, #0002 24%, #0007 68%, #000d); }
-    .reader { position:absolute; inset:0; z-index:2; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; -ms-overflow-style:none; text-align:center; -webkit-mask-image:linear-gradient(to bottom,transparent 5%,#000 20%,#000 82%,transparent 99%); mask-image:linear-gradient(to bottom,transparent 5%,#000 20%,#000 82%,transparent 99%); }
+    .reader { touch-action:pan-y; position:absolute; inset:0; z-index:2; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; -ms-overflow-style:none; text-align:center; -webkit-mask-image:linear-gradient(to bottom,transparent 5%,#000 20%,#000 82%,transparent 99%); mask-image:linear-gradient(to bottom,transparent 5%,#000 20%,#000 82%,transparent 99%); }
     .reader::-webkit-scrollbar { display:none; }
     .copy { padding:48% 8% 70%; font-size:var(--read-size,34px); line-height:1.42; font-weight:750; letter-spacing:-.025em; white-space:pre-wrap; overflow-wrap:anywhere; text-shadow:0 2px 8px #000b,0 0 22px #0008; }
     .eyeline { position:absolute; top:35%; left:10%; right:10%; z-index:1; height:1px; background:linear-gradient(to right,transparent,#ffffff44,transparent); pointer-events:none; }
@@ -41,6 +41,7 @@
     @keyframes pulse { 50% { opacity:.45; } }
     .progress { z-index:5; position:absolute; bottom:0; left:0; right:0; height:5px; background:#ffffff2b; }
     .progress-inner { height:100%; width:0; background:linear-gradient(to right,#c09eff,#9debd7); }
+    .stage-holder { touch-action:pan-y; }
     .controls { display:flex; flex-direction:column; gap:16px; }
     .panel { border:1px solid var(--stroke); border-radius:19px; background:linear-gradient(145deg,#1b233a,#141b2d); padding:19px; box-shadow:0 12px 34px #0002; }
     .panel h2 { margin:0 0 15px; font-size:16px; letter-spacing:-.025em; }
@@ -82,6 +83,7 @@
       header { padding-top:17px; padding-bottom:15px; }
       .layout { grid-template-columns:1fr; gap:20px; }
       .stage { width:min(100%,365px); max-height:none; }
+       .under-stage { max-width:365px; }
       .controls { max-width:620px; width:100%; margin:auto; }
       .intro { font-size:14px; }
     }
@@ -94,7 +96,7 @@
   <header><div class="brand"><span class="brand-mark" aria-hidden="true">↟</span> Fast Prompter</div><span class="tag">1× to 10× speed</span></header>
   <p class="intro">A faster teleprompter for short videos. Read your scrolling script while filming; the words won't appear in your saved recording.</p>
   <main class="layout">
-    <div class="stage-holder">
+    <div class="stage-holder" style="flex-direction:column;align-items:center;gap:10px;min-width:0">
       <div class="stage" id="stage" aria-label="Video preview and scrolling script">
         <video class="camera-source" id="cameraSource" autoplay muted playsinline aria-hidden="true"></video>
         <canvas class="camera mirror" id="camera" width="720" height="1280" aria-label="Portrait camera preview"></canvas>
@@ -104,6 +106,14 @@
         <div class="stage-top"><div class="pill status"><span class="dot" id="statusDot"></span><span id="statusLabel">READY</span></div><div class="pill" id="stageSpeed">1× SPEED</div></div>
         <button class="focus-exit" id="focusExit" type="button" aria-label="Exit focus mode">✕ Exit</button>
         <div class="progress"><div class="progress-inner" id="progress"></div></div>
+      </div>
+      <div class="under-stage" style="width:min(100%,420px);display:grid;gap:9px">
+        <div class="inline-grid"><button class="btn primary" id="quickCameraBtn" type="button">◎ Enable camera + mic</button><button class="btn warn" id="quickRecordBtn" type="button" disabled>● Start recording</button></div>
+        <div class="inline-grid"><button class="btn" id="quickPauseBtn" type="button" disabled>Ⅱ Pause take</button><button class="btn" id="quickFinishBtn" type="button" disabled>■ Finish & save</button></div>
+        <a class="download hidden" id="quickDownload" href="#">↓ Save video to device</a>
+        <button class="btn small" type="button" id="jumpSettings">↓ Go to script and settings</button>
+        <div class="minor" id="micStatus" role="status">Microphone: turn on camera to check input</div>
+        <div class="minor" style="text-align:center">Tap Pause to take a break. Resume keeps the same video.</div>
       </div>
     </div>
     <div class="controls">
@@ -134,8 +144,8 @@
         <div class="inline-grid" style="margin-top:10px"><button class="btn warn" type="button" id="recordBtn" disabled>● Start recording</button><button class="btn" type="button" id="pauseRecordBtn" disabled>Ⅱ Pause take</button></div>
         <div class="inline-grid" style="margin-top:10px"><button class="btn" type="button" id="finishRecordBtn" disabled>■ Finish & download</button><button class="btn" type="button" id="mirrorBtn">⇆ Mirror preview: on</button></div>
         <div class="inline-grid" style="margin-top:10px"><button class="btn" type="button" id="fitBtn">▣ Full view: on</button><button class="btn" type="button" id="rotateBtn">⟳ Rotate: 0°</button></div>
-        <p class="tip"><strong>Vertical 9:16 recording:</strong> Full view shows the entire camera picture without zooming in; empty space may appear around it. Rotate only if the preview appears sideways. The preview is mirrored for reading, but your saved recording is not.</p>
-        <p class="tip">Recordings are fixed to 9:16 portrait and contain camera + microphone only, never the scrolling words. Camera and recording require a secure HTTPS page.</p>
+        <p class="tip"><strong>Portrait preview:</strong> Full view shows the entire camera picture without zooming in; empty space may appear around it. Rotate only if the preview appears sideways. The preview is mirrored for reading, but your saved recording is not. The saved video may have a different orientation.</p>
+        <p class="tip">Recordings use the native camera video track to avoid canvas video freezing. File orientation depends on iOS and may need rotation after recording. The scrolling words are never included. Camera and recording require a secure HTTPS page.</p>
         <div id="recordMessage" class="message hidden" role="status" style="margin-top:12px"></div>
         <a id="downloadLink" class="download hidden" href="#" download="fast-prompter-video.webm" style="margin-top:12px">↓ Download recorded video</a>
       </section>
@@ -329,14 +339,31 @@
     ui.recordMessage.classList.remove('hidden');
     ui.recordMessage.classList.toggle('error', error);
   }
+  // Keep the phone page from stealing vertical swipes outside the script.
+  document.querySelectorAll('.under-stage button').forEach(b => b.style.touchAction = 'manipulation');
+  $('jumpSettings').addEventListener('click', () => document.querySelector('.controls').scrollIntoView({behavior:'smooth',block:'start'}));
+  $('quickCameraBtn').addEventListener('click', () => ui.cameraBtn.click());
+  $('quickRecordBtn').addEventListener('click', () => ui.recordBtn.click());
+  $('quickPauseBtn').addEventListener('click', () => ui.pauseRecordBtn.click());
+  $('quickFinishBtn').addEventListener('click', () => ui.finishRecordBtn.click());
+  function syncQuickButtons() {
+    $('quickCameraBtn').textContent = ui.cameraBtn.textContent;
+    $('quickRecordBtn').disabled = ui.recordBtn.disabled;
+    $('quickPauseBtn').disabled = ui.pauseRecordBtn.disabled;
+    $('quickFinishBtn').disabled = ui.finishRecordBtn.disabled;
+    $('quickPauseBtn').textContent = ui.pauseRecordBtn.textContent;
+    $('quickRecordBtn').textContent = ui.recordBtn.textContent;
+    $('quickFinishBtn').textContent = ui.finishRecordBtn.textContent;
+  }
   function stopTracks() { if (stream) stream.getTracks().forEach(track => track.stop()); stream = null; }
   function setCameraControls() {
     const on = Boolean(stream);
     ui.cameraBtn.textContent = on ? '◎ Turn camera off' : '◎ Turn camera on';
     ui.flipBtn.disabled = !on || (recorder && recorder.state !== 'inactive');
-    ui.recordBtn.disabled = !on || typeof MediaRecorder === 'undefined' || !output.captureStream || (recorder && recorder.state !== 'inactive');
+    ui.recordBtn.disabled = !on || typeof MediaRecorder === 'undefined' || (recorder && recorder.state !== 'inactive');
     ui.camera.classList.toggle('visible', on);
     ui.placeholder.classList.toggle('hidden', on);
+    syncQuickButtons();
   }
   async function startCamera() {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -378,7 +405,9 @@
     }
     startDrawLoop();
     setCameraControls();
-    showMessage(silent ? 'Camera ready. Microphone was not allowed, so the video will be silent.' : 'Camera ready. Preview and recording use the same vertical 9:16 frame.');
+    const audioTrack = stream.getAudioTracks()[0];
+    $('micStatus').textContent = audioTrack ? 'Microphone input: ' + (audioTrack.label || 'active input') + '. For an external mic, plug it in BEFORE enabling the camera and check a test clip.' : 'Microphone unavailable: recording will be silent. Check permissions and reconnect the mic.';
+    showMessage(silent ? 'Camera ready, but microphone permission was not granted.' : 'Camera ready. Record a 60-second test before an important take.');
   }
   function stopCamera() {
     if (recorder && recorder.state !== 'inactive') stopRecording();
@@ -386,6 +415,7 @@
     stopTracks();
     ui.source.pause(); ui.source.srcObject = null;
     setCameraControls();
+    $('micStatus').textContent = 'Microphone: camera off';
     showMessage('Camera off. Script scrolling still works.');
   }
   ui.cameraBtn.addEventListener('click', () => stream ? stopCamera() : startCamera());
@@ -413,18 +443,14 @@
     if (typeof MediaRecorder === 'undefined') { showMessage('This browser cannot record video here. Try a current version of Safari or Chrome.', true); return; }
     if (lastDownloadUrl) { URL.revokeObjectURL(lastDownloadUrl); lastDownloadUrl = null; }
     ui.downloadLink.classList.add('hidden');
+    $('quickDownload').classList.add('hidden');
     chunks = [];
     try {
       const mimeType = supportedMime();
-      if (!output.captureStream) throw new Error('Portrait video recording is unsupported in this browser. Try updating iOS Safari.');
-      // Recording a 9:16 canvas guarantees portrait pixel dimensions, instead
-      // of relying on camera metadata. Keep the microphone's original audio.
-      paintFrame();
-      canvasStream = output.captureStream(30);
-      composedStream = new MediaStream([
-        ...canvasStream.getVideoTracks(),
-        ...stream.getAudioTracks()
-      ]);
+      // iPhone Safari may freeze a canvas.captureStream() video track after ~30-45s
+      // while the microphone keeps recording. Record the native camera track instead.
+      // The camera preview remains portrait, but recorded orientation is device-dependent.
+      composedStream = new MediaStream([...stream.getVideoTracks(), ...stream.getAudioTracks()]);
       recorder = mimeType ? new MediaRecorder(composedStream, {mimeType}) : new MediaRecorder(composedStream);
       recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data); };
       recorder.onerror = () => showMessage('The browser had a recording problem. Try again.', true);
@@ -443,7 +469,12 @@
         ui.downloadLink.download = 'fast-prompter-' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.' + ext;
         ui.downloadLink.textContent = '↓ Download your ' + ext.toUpperCase() + ' video';
         ui.downloadLink.classList.remove('hidden');
-        showMessage('Portrait 9:16 video ready! Download it and open it in Photos to verify before uploading to TikTok.');
+        $('quickDownload').href = lastDownloadUrl;
+        $('quickDownload').download = ui.downloadLink.download;
+        $('quickDownload').textContent = '↓ Save finished video (' + ext.toUpperCase() + ')';
+        $('quickDownload').classList.remove('hidden');
+        showMessage('Video ready. Tap Save finished video directly below the camera. Verify orientation and audio in Photos.');
+        syncQuickButtons();
       };
       recorder.start(1000);
     } catch (error) {
@@ -464,6 +495,7 @@
     ui.statusDot.classList.add('recording');
     ui.statusLabel.textContent = running ? 'REC + SCROLL' : 'RECORDING';
     ui.flipBtn.disabled = true;
+    syncQuickButtons();
     showMessage('Recording. Pause take to cut out mistakes/breaks, then Resume. Finish for one video.');
     if (!running) play();
     recordingInterval = setInterval(() => {
@@ -472,10 +504,11 @@
       const mins = String(Math.floor(seconds / 60)).padStart(2,'0');
       const secs = String(seconds % 60).padStart(2,'0');
       ui.recordBtn.textContent = '● Recorded ' + mins + ':' + secs;
+      syncQuickButtons();
     }, 500);
   }
   function stopRecording() {
-    if (recorder?.state !== 'recording') return;
+    if (!recorder || !['recording','paused'].includes(recorder.state)) return;
     pause();
     recorder.stop();
     clearInterval(recordingInterval);
@@ -484,6 +517,10 @@
     ui.statusDot.classList.remove('recording');
     ui.statusLabel.textContent = running ? 'SCROLLING' : 'READY';
     ui.flipBtn.disabled = !stream;
+    ui.pauseRecordBtn.disabled = true;
+    ui.finishRecordBtn.disabled = true;
+    ui.recordBtn.disabled = !stream;
+    syncQuickButtons();
   }
   ui.recordBtn.addEventListener('click', startRecording);
   ui.pauseRecordBtn.addEventListener('click', () => {
@@ -496,6 +533,7 @@
         ui.pauseRecordBtn.textContent = '▶ Resume take';
         ui.statusLabel.textContent = 'TAKE PAUSED';
         ui.statusDot.classList.remove('recording');
+        syncQuickButtons();
         showMessage('Paused: this break is not recorded. Resume when ready.');
       } else if (recorder.state === 'paused') {
         recorder.resume();
@@ -504,6 +542,7 @@
         ui.pauseRecordBtn.textContent = 'Ⅱ Pause take';
         ui.statusLabel.textContent = 'REC + SCROLL';
         ui.statusDot.classList.add('recording');
+        syncQuickButtons();
         showMessage('Recording resumed in the same video.');
       }
     } catch (error) { showMessage('Pause/resume failed: ' + (error?.message || 'browser unsupported'), true); }
