@@ -113,6 +113,13 @@
         <a class="download hidden" id="quickDownload" href="#">↓ Save video to device</a>
         <button class="btn small" type="button" id="jumpSettings">↓ Go to script and settings</button>
         <div class="minor" id="micStatus" role="status">Microphone: turn on camera to check input</div>
+        <div class="mic-tools" style="background:#1b2540;border:1px solid #425173;border-radius:16px;padding:13px;display:grid;gap:9px">
+          <label for="micSelect" style="font-weight:700">🎙 Microphone input</label>
+          <select id="micSelect" style="width:100%;font:inherit;color:#fff;background:#293653;padding:12px;border-radius:10px;border:1px solid #63718b" aria-label="Choose microphone"><option value="">Automatic / iPhone default</option></select>
+          <div class="inline-grid"><button type="button" class="btn small" id="refreshMics">↻ Refresh microphones</button><button type="button" class="btn small" id="reconnectMic">🎙 Reconnect mic</button></div>
+          <div style="display:flex;align-items:center;gap:10px"><span class="minor">Mic level</span><div style="height:12px;background:#111827;border-radius:9px;flex:1;overflow:hidden"><div id="micMeter" style="height:100%;width:0%;background:#5ee3aa;transition:width .09s"></div></div></div>
+          <div class="minor" id="micHelp">Plug the USB-C receiver in first. Tap Refresh, then select it if listed. Tap or speak into the lavalier to test the level.</div>
+        </div>
         <div class="minor" style="text-align:center">Tap Pause to take a break. Resume keeps the same video.</div>
       </div>
     </div>
@@ -178,6 +185,73 @@
   let preciseScroll = 0;
   let frame = null;
   const basePixelsPerSecond = 30;
+  let audioStream = null;
+  let meterContext = null;
+  let meterAnimation = null;
+  let selectedMicId = '';
+  function audioSessionRoute() { try { if (navigator.audioSession) navigator.audioSession.type = 'play-and-record'; } catch (_) {} }
+  function resetAudioSession() { try { if (navigator.audioSession) { navigator.audioSession.type = 'playback'; navigator.audioSession.type = 'auto'; } } catch (_) {} }
+  function stopMeter() { if (meterAnimation) cancelAnimationFrame(meterAnimation); meterAnimation = null; if (meterContext) meterContext.close().catch(()=>{}); meterContext = null; $('micMeter').style.width = '0%'; }
+  function startMeter(track) {
+    stopMeter(); if (!track) return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      meterContext = new AudioCtx();
+      const input = meterContext.createMediaStreamSource(new MediaStream([track]));
+      const analyser = meterContext.createAnalyser(); analyser.fftSize = 1024; input.connect(analyser);
+      const samples = new Uint8Array(analyser.fftSize);
+      function draw() {
+        if (!meterContext || meterContext.state === 'closed') return;
+        analyser.getByteTimeDomainData(samples);
+        let sum = 0; for (const n of samples) { const v=(n-128)/128; sum += v*v; }
+        const rms = Math.sqrt(sum/samples.length);
+        $('micMeter').style.width = Math.min(100,Math.round(rms*420))+'%';
+        meterAnimation = requestAnimationFrame(draw);
+      }
+      draw();
+    } catch (_) { $('micHelp').textContent = 'Audio meter unavailable in this browser; test a short recording.'; }
+  }
+  async function refreshMicrophones() {
+    const select=$('micSelect'), previous=selectedMicId;
+    try {
+      const devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='audioinput');
+      select.innerHTML='';
+      const automatic=document.createElement('option'); automatic.value=''; automatic.textContent='Automatic / system default'; select.appendChild(automatic);
+      devices.forEach((d,i)=>{ const option=document.createElement('option'); option.value=d.deviceId; option.textContent=d.label||('Microphone '+(i+1)); select.appendChild(option); });
+      select.value=devices.some(d=>d.deviceId===previous)?previous:'';
+      selectedMicId=select.value;
+      $('micHelp').textContent=devices.length+' microphone input(s) visible to Safari. '+(devices.length===1?'If the USB-C receiver is missing, Safari may not expose it.':'Select the external receiver if shown, then tap Reconnect mic.');
+    } catch(e) { $('micHelp').textContent='Cannot list microphones: '+e.message; }
+  }
+  async function connectMicrophone() {
+    if (recorder && recorder.state !== 'inactive') { showMessage('Finish the recording before changing microphones.',true); return; }
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    const old=audioStream;
+    try {
+      // Reset first, then use the WebKit-reported routing workaround after acquiring audio.
+      try { if(navigator.audioSession) navigator.audioSession.type='auto'; } catch (_) {}
+      const constraints=selectedMicId ? {deviceId:{exact:selectedMicId},echoCancellation:false,noiseSuppression:false,autoGainControl:false} : {echoCancellation:false,noiseSuppression:false,autoGainControl:false};
+      const next=await navigator.mediaDevices.getUserMedia({audio:constraints,video:false});
+      audioSessionRoute();
+      audioStream=next;
+      if(old) old.getTracks().forEach(t=>t.stop());
+      const track=next.getAudioTracks()[0];
+      $('micStatus').textContent='Microphone input: '+(track?.label||'active microphone')+'. Speak into the lavalier and watch the meter.';
+      startMeter(track);
+      await refreshMicrophones();
+      setCameraControls();
+      showMessage('Microphone connected. Check the live meter, then record a short test.');
+    } catch(e) {
+      $('micStatus').textContent='Microphone connection failed: '+(e?.message||e?.name||'unknown error');
+      setCameraControls();
+      showMessage('Microphone not connected. Check Safari microphone permission and receiver, then tap Reconnect mic.',true);
+    }
+  }
+  $('refreshMics').addEventListener('click',refreshMicrophones);
+  $('reconnectMic').addEventListener('click',connectMicrophone);
+  $('micSelect').addEventListener('change', async e=>{selectedMicId=e.target.value;await connectMicrophone();});
+  navigator.mediaDevices?.addEventListener?.('devicechange',()=>{refreshMicrophones();});
   let stream = null;
   let facing = 'user';
   let mirror = true;
@@ -355,12 +429,12 @@
     $('quickRecordBtn').textContent = ui.recordBtn.textContent;
     $('quickFinishBtn').textContent = ui.finishRecordBtn.textContent;
   }
-  function stopTracks() { if (stream) stream.getTracks().forEach(track => track.stop()); stream = null; }
+  function stopTracks() { if (stream) stream.getTracks().forEach(track => track.stop()); stream = null; if (audioStream) audioStream.getTracks().forEach(track => track.stop()); audioStream=null; stopMeter(); resetAudioSession(); }
   function setCameraControls() {
     const on = Boolean(stream);
     ui.cameraBtn.textContent = on ? '◎ Turn camera off' : '◎ Turn camera on';
     ui.flipBtn.disabled = !on || (recorder && recorder.state !== 'inactive');
-    ui.recordBtn.disabled = !on || typeof MediaRecorder === 'undefined' || (recorder && recorder.state !== 'inactive');
+    ui.recordBtn.disabled = !on || !audioStream?.getAudioTracks().some(t=>t.readyState==='live') || typeof MediaRecorder === 'undefined' || (recorder && recorder.state !== 'inactive');
     ui.camera.classList.toggle('visible', on);
     ui.placeholder.classList.toggle('hidden', on);
     syncQuickButtons();
@@ -371,22 +445,10 @@
       return;
     }
     let nextStream;
-    let silent = false;
     try {
-      // Request sensor dimensions in landscape order. Current iOS Safari versions
-      // can return a sideways/zoomed track for 1080x1920 portrait constraints.
-      nextStream = await navigator.mediaDevices.getUserMedia({
-        video:{facingMode:{ideal:facing},width:{ideal:1280},height:{ideal:720}},
-        audio:{echoCancellation:true,noiseSuppression:true}
-      });
+      nextStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing},width:{ideal:1280},height:{ideal:720}},audio:false});
     } catch (error) {
-      try {
-        nextStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:facing}},audio:false});
-        silent = true;
-      } catch (again) {
-        showMessage('Could not open the camera: ' + (again?.message || 'check Safari permission and HTTPS.'), true);
-        return;
-      }
+      showMessage('Could not open camera: '+(error?.message||'check Safari permission.'),true); return;
     }
     stopDrawLoop();
     stopTracks();
@@ -405,9 +467,8 @@
     }
     startDrawLoop();
     setCameraControls();
-    const audioTrack = stream.getAudioTracks()[0];
-    $('micStatus').textContent = audioTrack ? 'Microphone input: ' + (audioTrack.label || 'active input') + '. For an external mic, plug it in BEFORE enabling the camera and check a test clip.' : 'Microphone unavailable: recording will be silent. Check permissions and reconnect the mic.';
-    showMessage(silent ? 'Camera ready, but microphone permission was not granted.' : 'Camera ready. Record a 60-second test before an important take.');
+    await connectMicrophone();
+    await refreshMicrophones();
   }
   function stopCamera() {
     if (recorder && recorder.state !== 'inactive') stopRecording();
@@ -440,6 +501,7 @@
   function startRecording() {
     if (recorder?.state === 'inactive') { ui.reader.scrollTop = 0; preciseScroll = 0; updateProgress(); }
     if (!stream) { showMessage('Turn on your camera before recording.', true); return; }
+    if (!audioStream?.getAudioTracks().some(t=>t.readyState==='live')) { showMessage('No working microphone. Tap Reconnect mic and check the level before recording.',true); return; }
     if (typeof MediaRecorder === 'undefined') { showMessage('This browser cannot record video here. Try a current version of Safari or Chrome.', true); return; }
     if (lastDownloadUrl) { URL.revokeObjectURL(lastDownloadUrl); lastDownloadUrl = null; }
     ui.downloadLink.classList.add('hidden');
@@ -450,7 +512,7 @@
       // iPhone Safari may freeze a canvas.captureStream() video track after ~30-45s
       // while the microphone keeps recording. Record the native camera track instead.
       // The camera preview remains portrait, but recorded orientation is device-dependent.
-      composedStream = new MediaStream([...stream.getVideoTracks(), ...stream.getAudioTracks()]);
+      composedStream = new MediaStream([...stream.getVideoTracks(), ...audioStream.getAudioTracks()]);
       recorder = mimeType ? new MediaRecorder(composedStream, {mimeType}) : new MediaRecorder(composedStream);
       recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data); };
       recorder.onerror = () => showMessage('The browser had a recording problem. Try again.', true);
