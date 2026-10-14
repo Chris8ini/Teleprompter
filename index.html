@@ -224,28 +224,59 @@
       $('micHelp').textContent=devices.length+' microphone input(s) visible to Safari. '+(devices.length===1?'If the USB-C receiver is missing, Safari may not expose it.':'Select the external receiver if shown, then tap Reconnect mic.');
     } catch(e) { $('micHelp').textContent='Cannot list microphones: '+e.message; }
   }
+  let microphoneConnecting = false;
   async function connectMicrophone() {
-    if (recorder && recorder.state !== 'inactive') { showMessage('Finish the recording before changing microphones.',true); return; }
+    if (microphoneConnecting) return;
+    if (recorder && recorder.state !== 'inactive') { showMessage('Finish recording before changing microphones.',true); return; }
     if (!navigator.mediaDevices?.getUserMedia) return;
-    const old=audioStream;
+    microphoneConnecting = true;
+    const requestedId = selectedMicId;
+    const micButton = $('reconnectMic');
+    micButton.disabled = true;
+    let next = null;
     try {
-      // Reset first, then use the WebKit-reported routing workaround after acquiring audio.
-      try { if(navigator.audioSession) navigator.audioSession.type='auto'; } catch (_) {}
-      const constraints=selectedMicId ? {deviceId:{exact:selectedMicId},echoCancellation:false,noiseSuppression:false,autoGainControl:false} : {echoCancellation:false,noiseSuppression:false,autoGainControl:false};
-      const next=await navigator.mediaDevices.getUserMedia({audio:constraints,video:false});
+      // iOS may keep its previous physical route while the old capture is active.
+      // Release it completely BEFORE requesting a different device.
+      stopMeter();
+      if (audioStream) audioStream.getTracks().forEach(t => t.stop());
+      audioStream = null;
+      setCameraControls();
+      try { if (navigator.audioSession) navigator.audioSession.type = 'auto'; } catch (_) {}
+      await new Promise(resolve => setTimeout(resolve, 350));
+      const constraints = requestedId
+        ? {deviceId:{exact:requestedId}, echoCancellation:false, noiseSuppression:false, autoGainControl:false}
+        : {echoCancellation:false, noiseSuppression:false, autoGainControl:false};
+      next = await navigator.mediaDevices.getUserMedia({audio:constraints,video:false});
+      const track = next.getAudioTracks()[0];
+      if (!track || track.readyState !== 'live') throw new Error('Safari returned no live audio track');
+      // This is an experimental WebKit routing workaround, not guaranteed by iOS.
       audioSessionRoute();
-      audioStream=next;
-      if(old) old.getTracks().forEach(t=>t.stop());
-      const track=next.getAudioTracks()[0];
-      $('micStatus').textContent='Microphone input: '+(track?.label||'active microphone')+'. Speak into the lavalier and watch the meter.';
+      const settings = track.getSettings?.() || {};
+      const actualId = settings.deviceId || '';
+      const mismatch = Boolean(requestedId && actualId && requestedId !== actualId);
+      audioStream = next;
+      next = null;
+      track.addEventListener('ended', () => {
+        if (audioStream?.getAudioTracks().includes(track)) {
+          $('micStatus').textContent = 'Microphone disconnected. Reconnect before recording.';
+          setCameraControls();
+        }
+      });
+      $('micStatus').textContent = (mismatch ? '⚠ Safari returned a DIFFERENT microphone: ' : 'Microphone stream opened: ') +
+        (track.label || 'unknown microphone') + (mismatch ? ' (not the selected USB receiver).' : '. Test sound with the meter.');
       startMeter(track);
       await refreshMicrophones();
       setCameraControls();
-      showMessage('Microphone connected. Check the live meter, then record a short test.');
+      showMessage(mismatch ? 'Safari did not honor the USB microphone selection. Try another input or iPhone recording app.' : 'Audio stream opened. Tap the lavalier and check the meter; a device name alone does not prove sound works.', mismatch);
     } catch(e) {
+      if (next) next.getTracks().forEach(t=>t.stop());
+      audioStream = null;
       $('micStatus').textContent='Microphone connection failed: '+(e?.message||e?.name||'unknown error');
       setCameraControls();
-      showMessage('Microphone not connected. Check Safari microphone permission and receiver, then tap Reconnect mic.',true);
+      showMessage('Could not open the selected microphone. '+(e?.message||'Check iPhone permissions.'),true);
+    } finally {
+      microphoneConnecting = false;
+      micButton.disabled = false;
     }
   }
   $('refreshMics').addEventListener('click',refreshMicrophones);
@@ -501,7 +532,7 @@
   function startRecording() {
     if (recorder?.state === 'inactive') { ui.reader.scrollTop = 0; preciseScroll = 0; updateProgress(); }
     if (!stream) { showMessage('Turn on your camera before recording.', true); return; }
-    if (!audioStream?.getAudioTracks().some(t=>t.readyState==='live')) { showMessage('No working microphone. Tap Reconnect mic and check the level before recording.',true); return; }
+    if (!audioStream?.getAudioTracks().some(t=>t.readyState==='live')) { showMessage('No live microphone track. Select a microphone and reconnect it before recording.',true); return; }
     if (typeof MediaRecorder === 'undefined') { showMessage('This browser cannot record video here. Try a current version of Safari or Chrome.', true); return; }
     if (lastDownloadUrl) { URL.revokeObjectURL(lastDownloadUrl); lastDownloadUrl = null; }
     ui.downloadLink.classList.add('hidden');
